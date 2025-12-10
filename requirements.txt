@@ -1,0 +1,15 @@
+<<<<<<< Updated upstream
+fastapi==0.115.0
+uvicorn==0.30.6
+pillow==10.4.0
+pytesseract==0.3.13
+opencv-python==4.10.0.84
+numpy==2.1.2
+python-dateutil==2.9.0.post0
+python-multipart==0.0.9
+=======
+python-telegram-bot==20.7
+urllib3<2
+python-dotenv>=1.0.0
+apscheduler>=3.10.0
+>>>>>>> Stashed changes

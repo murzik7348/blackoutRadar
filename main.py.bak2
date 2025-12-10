@@ -1,0 +1,197 @@
+
+import os
+from telegram import (
+    Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
+    InlineKeyboardMarkup, InlineKeyboardButton
+)
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
+)
+
+
+# ==== INLINE TABLES (added) ====
+import os as _os_inline_tables
+QUEUE_COUNT = int(_os_inline_tables.getenv("QUEUE_COUNT", "5"))  # скільки черг = стільки підчерг
+
+def _kb_queue() -> InlineKeyboardMarkup:
+    rows = []
+    i = 1
+    while i <= QUEUE_COUNT:
+        row = [InlineKeyboardButton(f"Черга {i}", callback_data=f"queue:{i}")]
+        if i + 1 <= QUEUE_COUNT:
+            row.append(InlineKeyboardButton(f"Черга {i+1}", callback_data=f"queue:{i+1}"))
+        rows.append(row)
+        i += 2
+    rows.append([InlineKeyboardButton("✖ Закрити", callback_data="queue:close")])
+    return InlineKeyboardMarkup(rows)
+
+def _kb_sub() -> InlineKeyboardMarkup:
+    rows = []
+    i = 1
+    while i <= QUEUE_COUNT:
+        row = [InlineKeyboardButton(f"Підчерга {i}.{i}", callback_data=f"sub:{i}")]
+        if i + 1 <= QUEUE_COUNT:
+            row.append(InlineKeyboardButton(f"Підчерга {i+1}.{i+1}", callback_data=f"sub:{i+1}"))
+        rows.append(row)
+        i += 2
+    rows.append([InlineKeyboardButton("✖ Закрити", callback_data="sub:close")])
+    return InlineKeyboardMarkup(rows)
+
+async def cb_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    await q.answer()
+    data = (q.data or "").split(":", 1)
+    if len(data) != 2:
+        return
+    val = data[1]
+    if val == "close":
+        try:
+            await q.edit_message_text("Закрито.")
+        except Exception:
+            pass
+        return
+    if not val.isdigit():
+        return
+    n = int(val)
+    if n < 1 or n > QUEUE_COUNT:
+        return
+    try:
+        upsert_user(q.message.chat_id, queue=n)
+    except Exception:
+        pass
+    try:
+        await q.edit_message_text(f"Черга збережена: {n}")
+    except Exception:
+        pass
+    await q.message.chat.send_message("Оберіть свою підчергу:", reply_markup=_kb_sub())
+
+async def cb_sub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    await q.answer()
+    data = (q.data or "").split(":", 1)
+    if len(data) != 2:
+        return
+    val = data[1]
+    if val == "close":
+        try:
+            await q.edit_message_text("Закрито.")
+        except Exception:
+            pass
+        return
+    if not val.isdigit():
+        return
+    n = int(val)
+    if n < 1 or n > QUEUE_COUNT:
+        return
+    try:
+        upsert_user(q.message.chat_id, subqueue=f"{n}.{n}")
+    except Exception:
+        pass
+    try:
+        await q.edit_message_text(f"Підчерга збережена: {n}.{n}")
+    except Exception:
+        pass
+    await q.message.chat.send_message(_summary(q.message.chat_id))
+# ==== /INLINE TABLES (added) ====
+
+from .config import BOT_TOKEN, POLL_DROP_PENDING
+from .utils.logging import setup_logging
+from .services.storage import upsert_user, get_user
+QUEUE_COUNT = int(os.getenv("QUEUE_COUNT", "5"))
+def _kb_geo_once() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup([[KeyboardButton("Надіслати геолокацію", request_location=True)]], resize_keyboard=True, one_time_keyboard=True)
+def _kb_queue() -> InlineKeyboardMarkup:
+    rows = []
+    i = 1
+    while i <= QUEUE_COUNT:
+        row = [InlineKeyboardButton(f"Черга {i}", callback_data=f"queue:{i}")]
+        if i + 1 <= QUEUE_COUNT:
+            row.append(InlineKeyboardButton(f"Черга {i+1}", callback_data=f"queue:{i+1}"))
+        rows.append(row); i += 2
+    rows.append([InlineKeyboardButton("✖ Закрити", callback_data="queue:close")])
+    return InlineKeyboardMarkup(rows)
+def _kb_sub() -> InlineKeyboardMarkup:
+    rows = []
+    i = 1
+    while i <= QUEUE_COUNT:
+        row = [InlineKeyboardButton(f"Підчерга {i}.{i}", callback_data=f"sub:{i}")]
+        if i + 1 <= QUEUE_COUNT:
+            row.append(InlineKeyboardButton(f"Підчерга {i+1}.{i+1}", callback_data=f"sub:{i+1}"))
+        rows.append(row); i += 2
+    rows.append([InlineKeyboardButton("✖ Закрити", callback_data="sub:close")])
+    return InlineKeyboardMarkup(rows)
+def _summary(chat_id: int) -> str:
+    u = get_user(chat_id)
+    city = u.get("city") or u.get("місто") or "—"
+    region = u.get("region") or u.get("область") or "—"
+    q = u.get("queue") or "—"
+    sub = u.get("subqueue") or "—"
+    return ("⚠️ Перевір, будь ласка, що все правильно:\n"
+            f"• Місто: {city}\n• Область: {region}\n• Черга: {q}\n• Підчерга: {sub}")
+def _prefix(chat_id: int) -> str:
+    u = get_user(chat_id); city = u.get("city") or u.get("місто"); region = u.get("region") or u.get("область")
+    if city and region: return f"Прийнято: {city}, {region}. "
+    if city: return f"Прийнято: {city}. "
+    return ""
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.effective_chat.send_message("Привіт! Надішли гео чи напиши місто — або просто обери чергу нижче.", reply_markup=_kb_geo_once())
+    await update.effective_chat.send_message(_prefix(update.effective_chat.id) + "Оберіть свою чергу:", reply_markup=_kb_queue())
+async def cmd_hide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.effective_chat.send_message("Клавіатуру приховано ✅", reply_markup=ReplyKeyboardRemove())
+async def cmd_me(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.effective_chat.send_message(_summary(update.effective_chat.id))
+async def on_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text_city = (update.message.text or "").strip()
+    if text_city: upsert_user(update.effective_chat.id, city=text_city)
+    await update.effective_chat.send_message(_prefix(update.effective_chat.id) + "Оберіть свою чергу:", reply_markup=_kb_queue())
+async def on_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    loc = update.message.location
+    upsert_user(update.effective_chat.id, lat=float(loc.latitude), lon=float(loc.longitude))
+    await update.effective_chat.send_message("Гео збережено ✅", reply_markup=ReplyKeyboardRemove())
+    await update.effective_chat.send_message(_prefix(update.effective_chat.id) + "Оберіть свою чергу:", reply_markup=_kb_queue())
+async def cb_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query; await q.answer()
+    data = (q.data or "").split(":", 1)
+    if len(data) != 2: return
+    val = data[1]
+    if val == "close":
+        try: await q.edit_message_text("Закрито.")
+        except Exception: pass
+        return
+    if not val.isdigit(): return
+    n = int(val)
+    if n < 1 or n > QUEUE_COUNT: return
+    upsert_user(q.message.chat_id, queue=n)
+    try: await q.edit_message_text(f"Черга збережена: {n}")
+    except Exception: pass
+    await q.message.chat.send_message(_prefix(q.message.chat_id) + "Оберіть свою підчергу:", reply_markup=_kb_sub())
+async def cb_sub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query; await q.answer()
+    data = (q.data or "").split(":", 1)
+    if len(data) != 2: return
+    val = data[1]
+    if val == "close":
+        try: await q.edit_message_text("Закрито.")
+        except Exception: pass
+        return
+    if not val.isdigit(): return
+    n = int(val)
+    if n < 1 or n > QUEUE_COUNT: return
+    upsert_user(q.message.chat_id, subqueue=f"{n}.{n}")
+    try: await q.edit_message_text(f"Підчерга збережена: {n}.{n}")
+    except Exception: pass
+    await q.message.chat.send_message(_summary(q.message.chat_id))
+def run() -> None:
+    setup_logging("INFO")
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("me", cmd_me))
+    app.add_handler(CommandHandler("hide", cmd_hide))
+    app.add_handler(CallbackQueryHandler(cb_queue, pattern=r"^queue:"))
+    app.add_handler(CallbackQueryHandler(cb_sub, pattern=r"^sub:"))
+    app.add_handler(MessageHandler(filters.LOCATION, on_location))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_city))
+    app.run_polling(drop_pending_updates=POLL_DROP_PENDING)
+if __name__ == "__main__":
+    run()

@@ -1,0 +1,26 @@
+{
+  "oblast": {
+    "Закарпатська область": {
+      "count": 6,
+      "subgroups": true
+    }
+  },
+  "city": {
+    "Київ": {
+      "count": 6,
+      "subgroups": true
+    },
+    "Свалява": {
+      "count": 5,
+      "subgroups": true
+    },
+    "Ужгород": {
+      "count": 6,
+      "subgroups": true
+    },
+    "Мукачево": {
+      "count": 6,
+      "subgroups": true
+    }
+  }
+}
