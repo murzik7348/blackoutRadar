@@ -1,77 +1,61 @@
-# uk-blackout-ai — OCR сервіс для графіків відключення світла (UA)
+# ⚡ uk-blackout-ai — Telegram Бот для Графіків Відключення Світла
 
-**Що це:** локальний FastAPI сервіс, який приймає фото/скріни з графіками, робить OCR (Tesseract) і повертає структурований JSON: місто, дата, інтервали для кожної черги.
+Цей бот допомагає користувачам вчасно отримувати сповіщення про відключення та включення світла згідно з їхньою чергою (групою). Бот також має функцію парсингу зображень з графіками за допомогою Tesseract OCR, витягуючи структуровані дані у форматі JSON.
 
-## Швидкий старт (локально)
-1) Встанови Tesseract та українські моделі.
-   - **macOS (Homebrew):**
-     ```bash
-     brew install tesseract
-     brew install tesseract-lang
-     # якщо не ставиться tesseract-lang: `brew install tesseract-ukrainian`
-     which tesseract  # скопіюй шлях, наприклад /opt/homebrew/bin/tesseract
-     ```
-   - **Ubuntu/Debian:**
-     ```bash
-     sudo apt update
-     sudo apt install -y tesseract-ocr tesseract-ocr-ukr tesseract-ocr-rus
-     ```
+## 📂 Структура проєкту
 
-2) Python залежності:
-   ```bash
-   cd ocr_service
-   python -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
+Проєкт організовано таким чином:
 
-3) (За потреби) Вкажи шлях до tesseract:
-   ```bash
-   export TESSERACT_CMD="/opt/homebrew/bin/tesseract"  # macOS M1/M2
-   ```
+- `src/` — Вихідний код Python. Тут знаходиться основна логіка бота, обробники команд, парсер графіків та інші сервіси.
+  - `main.py` та `__main__.py` — Головні точки входу.
+  - `handlers.py` — Обробники повідомлень інтерфейсу (меню користувача).
+  - `parser.py` — OCR парсер зображень (Використовує Tesseract).
+  - `dtek_client.py` та `collector_*.py` — Клієнти для збору розкладів.
+- `data/` — JSON-файли для зберігання інформації, збережених налаштувань користувачів (`user_data.json`) та розкладів.
+- `docs/` — Документація, звіти про аудит коду та інструкції з розгортання в production-середовищі.
+- `scripts/` — Набір корисних скриптів системного рівня (`run.sh`, `deploy.sh`, `Dockerfile`, патчі тощо).
+- `tests/` — Скрипти для тестування (наприклад, перевірка парсера чи розкладів).
 
-4) Запуск сервісу:
-   ```bash
-   uvicorn app:app --host 0.0.0.0 --port 8000
-   ```
-   Перевірка: `GET http://localhost:8000/health` → `{"ok": true}`.
+## 🚀 Як Запустити (Локально)
 
-5) Витяг зображення (curl):
-   ```bash
-   curl -F "image=@/path/to/photo.jpg" http://localhost:8000/extract
-   ```
+### 1. Передумови
+Якщо ви хочете використовувати функцію розпізнавання (OCR) графіків:
+Встановіть **Tesseract OCR** та українські мовні моделі.
+* На macOS: `brew install tesseract tesseract-lang`
+* На Ubuntu/Debian: `sudo apt install -y tesseract-ocr tesseract-ocr-ukr`
 
-## Запуск у Docker
+### 2. Налаштування віртуального середовища
 ```bash
-cd ocr_service
-docker build -t uk-blackout-ai .
-docker run --rm -p 8000:8000 -e TESSERACT_CMD=tesseract uk-blackout-ai
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-## Інтеграція з твоїм Telegram-ботом (python-telegram-bot)
-- Додай модуль `bot_integration/schedule_client.py` у свій репозиторій і викликай `extract_schedule(image_path)` після того, як бот завантажив фото від користувача.
-- Отримаєш JSON з чергами та проміжками часу — збережи в свою БД/JSON і використовуй для сповіщень.
+### 3. Конфігурація
+Вам необхідно додати файл `src/config_private.py` зі своїм Telegram токеном:
+```python
+# src/config_private.py
+PRIVATE_TOKEN = "ТВІЙ_ТЕЛЕГРАМ_ТОКЕН"
+```
 
-## Пакетна обробка папки
+### 4. Запуск бота
+Тепер ви можете легко запустити його з кореня проєкту за допомогою:
 ```bash
-python batch_ingest.py --input /path/to/folder --out out_json
+python -m src
 ```
-Для кожного зображення створить JSON файл із тим же ім’ям.
-
-## Формат відповіді
-```json
-{
-  "city": "Київ",
-  "oblast": "Київська",
-  "date": "2025-11-10",
-  "queues": [
-    {"queue": 1, "intervals": [["08:00","12:00"], ["20:00","24:00"]]},
-    {"queue": 2, "intervals": [["12:00","16:00"]]}
-  ],
-  "source_hash": "sha256:...",
-  "raw_text": "повний текст із OCR"
-}
+Або використовуючи скрипт швидкого запуску:
+```bash
+./scripts/run.sh
 ```
-> **Примітка:** Парсер регексами заточений під типові шаблони: `черга/група N` і діапазони `HH:MM–HH:MM`. Легко розширюється правилами в `extract.py` → `parse_schedule()`.
 
-## Ліцензія
-MIT
+## 🐳 Запуск через Docker
+У теці `scripts/` є усе необхідне для збирання та запуску Docker-образу.
+```bash
+docker build -t uk-blackout-ai -f scripts/Dockerfile .
+docker run --rm -d uk-blackout-ai
+```
+
+## 🛠 Адміністрування
+Адміністратор може надіслати боту скріншот з графіком відключень, бот самостійно його розпізнає та збереже новий `schedule.json` у теку `data/`.
+
+*Також дивіться додаткові матеріали в папці `docs/`!*
